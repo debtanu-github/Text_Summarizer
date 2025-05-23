@@ -11,54 +11,39 @@ st.set_page_config(
 )
 
 # --- Load Environment Variables & Configure Gemini API ---
-# This section handles API key for both local (.env) and Streamlit Cloud (secrets)
-
 gemini_api_key = None
 gemini_configured = False
 
-# For Streamlit Cloud deployment, secrets are accessed via st.secrets
-# For local development, we'll use .env
-# Check if running in Streamlit Cloud (this env var is set by Streamlit Cloud)
-# A common way to check, though not officially documented for all cases,
-# is to see if st.secrets is populated without raising an error,
-# or check for specific environment variables Streamlit Cloud might set.
-# A more robust check for Streamlit Cloud:
-is_streamlit_cloud = os.getenv('SERVER_SOFTWARE', '').startswith('Streamlit') or \
-                     os.getenv('STREAMLIT_SERVER_PORT') is not None or \
-                     ('STREAMLIT_SHARING_MODE' in os.environ and os.environ['STREAMLIT_SHARING_MODE'] == 'true')
+# Try to get the API key from Streamlit secrets first (for deployed app)
+streamlit_secret_name = "GOOGLE_GEMINI_API_KEY" # Must match what you set in Streamlit Cloud
+try:
+    # Check if st.secrets has the key. This works on Streamlit Cloud.
+    # Locally, if no .streamlit/secrets.toml, st.secrets will be empty or raise an error on access.
+    if hasattr(st, 'secrets') and streamlit_secret_name in st.secrets:
+        gemini_api_key = st.secrets[streamlit_secret_name]
+        # st.sidebar.info("Using API Key from Streamlit Secrets.", icon="☁️") # For debugging
+except Exception: # Broad exception because st.secrets behavior can vary locally
+    pass # If st.secrets access fails or key not found, proceed to .env check
 
-
-if is_streamlit_cloud:
-    # This block executes when deployed on Streamlit Community Cloud
-    streamlit_secret_key_name = "GOOGLE_GEMINI_API_KEY" # The name you'll use in Streamlit Cloud secrets
-    if streamlit_secret_key_name in st.secrets:
-        gemini_api_key = st.secrets[streamlit_secret_key_name]
-        # st.sidebar.success("Using API Key from Streamlit Secrets!", icon="✅")
-    else:
-        st.error(f"🔴 Google API Key ('{streamlit_secret_key_name}') not found in Streamlit secrets. Please set it for the deployed app.")
-        st.stop()
-else:
-    # This block executes for local development
+# If not found in secrets (or if running locally and secrets aren't set up), try .env
+if not gemini_api_key:
     load_dotenv()
-    local_api_key_from_env = os.getenv("GOOGLE_API_KEY")
-    if local_api_key_from_env:
-        gemini_api_key = local_api_key_from_env
-        # st.sidebar.info("Using API Key from local .env file.", icon="📄")
-    else:
-        # This error will show if .env is missing or GOOGLE_API_KEY is not in it
-        st.error("🔴 GOOGLE_API_KEY not found in your local .env file. Please create or check your .env file.")
-        st.stop()
+    local_env_key = os.getenv("GOOGLE_API_KEY") # Key name in your local .env file
+    if local_env_key:
+        gemini_api_key = local_env_key
+        # st.sidebar.info("Using API Key from local .env file.", icon="📄") # For debugging
 
-# Configure Gemini if API key was successfully obtained
+# Final check and configuration
 if gemini_api_key:
     try:
         genai.configure(api_key=gemini_api_key)
         gemini_configured = True
     except Exception as e:
         st.error(f"🔴 Error configuring Google Gemini API: {e}")
-        st.stop() # Stop app if configuration fails
-elif not is_streamlit_cloud : # Only show this specific error if local and key wasn't loaded
-    st.error("🔴 API Key was not loaded. Ensure .env is correct.")
+        st.stop()
+else:
+    # If after all checks, no API key is found
+    st.error(f"🔴 Google API Key not found. Please ensure '{streamlit_secret_name}' is set in Streamlit secrets for deployment, or 'GOOGLE_API_KEY' is in your .env file for local development.")
     st.stop()
 
 
